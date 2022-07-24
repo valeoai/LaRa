@@ -1,0 +1,2 @@
+_target_ : semanticbev.utils.scheduler.LinearWarmupScheduler
+warmup: 2000

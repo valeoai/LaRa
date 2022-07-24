@@ -1,0 +1,34 @@
+# @package _global_
+
+defaults:
+  - override /data_aug_conf: fixed_resize_and_crop.yaml
+  - override /grid_conf: lift_splat_shoot.yaml
+  - override /model: LaRa.yaml
+  - override /trainer: ddp.yaml
+  - override /optimizer: adamW.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+# name of the run determines folder name in logs (usually change by cmd line interface)
+name: "default"
+
+
+model:
+  net:
+    latent_encoder:
+      input_embedding:
+        input_embeddings:
+          cam_rays:
+            _target_: semanticbev.models.components.LaRa_embeddings.CamMatrixInputEmbedding
+
+    latent_decoder:
+      query_generator:
+        query_generators:
+          norm_coords:
+            _target_: semanticbev.models.components.LaRa_embeddings.CoordConvQueryGenerator
+            grid_conf: ${grid_conf}
+            with_r: True
+
+
+

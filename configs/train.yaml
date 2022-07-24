@@ -1,0 +1,50 @@
+# @package _global_
+
+# specify here default training configuration
+defaults:
+  - _self_
+  - grid_conf: lift_splat_shoot.yaml
+  - data_aug_conf: fixed_resize_and_crop.yaml
+  - datamodule: nuscenes.yaml
+  - optimizer: adam.yaml
+  - scheduler: step_lr.yaml
+  - model: LaRa.yaml
+  - callbacks: default.yaml
+  - logger: tensorboard.yaml
+  - trainer: default.yaml
+  - log_dir: default.yaml
+
+  # experiment configs allow for version control of specific configurations
+  # e.g. best hyperparameters for each combination of model and datamodule
+  - experiment: null
+
+  # debugging config (enable through command line, e.g. `python train.py debug=default)
+  - debug: null
+
+  # config for hyperparameter optimization
+  - hparams_search: null
+
+  # enable color logging
+  - override hydra/hydra_logging: colorlog
+  - override hydra/job_logging: colorlog
+
+
+# pretty print config at the start of the run using Rich library
+print_config: True
+
+# disable python warnings if they annoy you
+ignore_warnings: True
+
+# set False to skip model training
+train: True
+
+# evaluate on test set, using best model weights achieved during training
+# lightning chooses best weights based on the metric specified in checkpoint callback
+test: True
+
+# seed for random number generators in pytorch, numpy and python.random
+seed: 84924 # 42 * 2022
+
+# default name for the experiment, determines logging folder path
+# (you can overwrite this name in experiment configs)
+name: "default"

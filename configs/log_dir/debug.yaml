@@ -1,0 +1,8 @@
+# @package _global_
+
+hydra:
+  run:
+    dir: ${oc.env:DEBUG_SAVEDIR}/${name}/
+  sweep:
+    dir: ${oc.env:DEBUG_SAVEDIR}/multiruns/${name}/
+    subdir: ${hydra.job.num}

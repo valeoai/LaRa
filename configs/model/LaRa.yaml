@@ -1,0 +1,58 @@
+_target_: semanticbev.models.bev_binary_occupancy.BEVBinaryOccupancy
+pos_weight: 2.13  # from LSS
+
+
+net:
+  _target_: semanticbev.models.components.LaRa.LaRa
+
+  input_stride: 8
+
+  cam_encoder:
+    _target_: semanticbev.models.components.LaRa.CamEncode
+    weights_path: ${oc.env:WEIGHTS_PATH}
+    num_out_channels: 128
+    version: 'b4'
+    downsample: ${model.net.input_stride}
+
+
+  latent_encoder:
+    _target_: semanticbev.models.components.LaRa_encoder.LaRaEncoder
+    latent_shape: [256,256]
+    num_layers: 1
+    num_cross_attention_heads: 32
+    num_self_attention_heads: 16
+    num_self_attention_layers_per_block: 4
+    input_embedding:
+      _target_: semanticbev.models.components.LaRa_encoder.InputEmbeddingCollection
+      num_image_channels: ${model.net.cam_encoder.num_out_channels}
+      embedding_map: 'mlp'
+      embedding_channels: 128
+      embedding_merge: 'concat'
+      input_prenorm: False
+      input_embeddings: ???
+
+
+  latent_decoder:
+    _target_: semanticbev.models.components.LaRa_decoder.LaRaDecoder
+    latent_shape: ${model.net.latent_encoder.latent_shape}
+    query_map: 'mlp'
+    residual_ca: False
+    num_cross_attention_heads: 16
+    query_generator:
+      _target_: semanticbev.models.components.LaRa_decoder.QueryGeneratorCollection
+      query_generators: ???
+    output_adapter:
+      _target_: semanticbev.models.components.LaRa_embeddings.BEVOutputAdapter
+      grid_conf: ${grid_conf}
+      num_output_channels: 256
+
+
+  bev_encoder:
+    _target_: semanticbev.models.components.LaRa.BevEncode
+    num_in_channels: ${model.net.latent_decoder.output_adapter.num_output_channels}
+    num_out_channels: 1
+
+
+
+
+

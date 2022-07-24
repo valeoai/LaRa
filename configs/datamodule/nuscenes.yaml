@@ -1,0 +1,11 @@
+_target_: semanticbev.datamodules.nuscenes_datamodule.NuScenesDataModule
+version: trainval
+dataroot: ${oc.env:DATADIR}
+batch_size: 2
+num_workers: 10
+grid_conf: ${grid_conf}
+data_aug_conf: ${data_aug_conf}
+pin_memory: True
+prefetch_factor: 2
+update_intrinsics: True
+
