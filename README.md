@@ -8,12 +8,26 @@
 <a href="https://hydra.cc/"><img alt="Config: Hydra" src="https://img.shields.io/badge/Config-Hydra-89b8cd"></a>
 <a href="https://github.com/ashleve/lightning-hydra-template"><img alt="Template" src="https://img.shields.io/badge/-Lightning--Hydra--Template-017F2F?style=flat&logo=github&labelColor=gray"></a><br>
 [![Paper](http://img.shields.io/badge/paper-arxiv.2206.13294-B31B1B.svg)](https://arxiv.org/abs/2206.13294)
+[![Conference](http://img.shields.io/badge/CoRL-2022-4b44ce.svg)](https://openreview.net/forum?id=abd_D-iVjk0)
+
+
+This is the reference PyTorch implementation for training and testing depth prediction models using the method described 
+in our paper [**LaRa: Latents and Rays for Multi-Camera Bird’s-Eye-View Semantic Segmentation**
+](https://openreview.net/forum?id=abd_D-iVjk0)
 
 </div>
 
-## Description
-
-PyTorch implementation for LaRa: [arxiv.2206.13294](https://arxiv.org/abs/2206.13294)
+If you find our work useful, please consider citing:
+```bibtex
+@inproceedings{
+    bartoccioni2022lara,
+    title={LaRa: Latents and Rays for Multi-Camera Bird{\textquoteright}s-Eye-View Semantic Segmentation},
+    author={Florent Bartoccioni and Eloi Zablocki and Andrei Bursuc and Patrick Perez and Matthieu Cord and Karteek Alahari},
+    booktitle={6th Annual Conference on Robot Learning},
+    year={2022},
+    url={https://openreview.net/forum?id=abd_D-iVjk0}
+}
+```
 
 ## ⚙ Setup <a name="setup"></a>
 
@@ -38,6 +52,11 @@ Change the paths present in the `.env` file to configure the saving dir and the 
 
 ## 🏋️ Training <a name="training"></a>
 
+> **Note**
+> A smaller and faster version of LaRa is available with `model=LaRaUP`.
+> BEV features are first predicted at 25x25 resolution and then upsampled to 200x200.
+
+
 Train model with chosen experiment configuration from [configs/experiment/](configs/experiment/)
 
 ```bash
@@ -47,14 +66,16 @@ python train.py experiment=LaRa_inCamrays_outCoord
 You can override any parameter from the command line like this
 
 ```bash
-python train.py trainer.max_epochs=20 datamodule.batch_size=64 model=tiny_LaRa experiment=LaRa_inCamrays_outFourier
+python train.py trainer.max_epochs=20 datamodule.batch_size=64 model=LaRaUP experiment=LaRa_inCamrays_outFourier
 ```
 
-## Credits
+## 🎖️ Acknowledgements
 
 This project used or adapted code from:
 * https://github.com/nv-tlabs/lift-splat-shoot
-* https://github.com/TRI-ML/packnet-sfm
 * https://github.com/krasserm/perceiver-io
+
+In particular, to structure our code we used:
+https://github.com/ashleve/lightning-hydra-template
 
 Please consider giving them a star or citing their work if you use them.

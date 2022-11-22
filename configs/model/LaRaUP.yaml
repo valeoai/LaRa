@@ -8,7 +8,7 @@ net:
   input_stride: 8
 
   cam_encoder:
-    _target_: semanticbev.models.components.LaRa.SmallCamEncode
+    _target_: semanticbev.models.components.LaRa.CamEncode
     weights_path: ${oc.env:WEIGHTS_PATH}
     num_out_channels: 128
     version: 'b4'
@@ -22,29 +22,32 @@ net:
     num_cross_attention_heads: 32
     num_self_attention_heads: 16
     num_self_attention_layers_per_block: 4
-    input_embedding:
+    layerscale_init: 0.00001
+    drop_path: 0.
+    input_adapter:
       _target_: semanticbev.models.components.LaRa_encoder.InputEmbeddingCollection
       num_image_channels: ${model.net.cam_encoder.num_out_channels}
       embedding_map: 'mlp'
       embedding_channels: 128
       embedding_merge: 'concat'
       input_prenorm: False
-      input_embeddings: ???
+      input_adapters: ???
 
 
   latent_decoder:
     _target_: semanticbev.models.components.LaRa_decoder.LaRaDecoder
-    latent_shape: ${model.net.latent_encoder.latent_shape}
+    latent_shape: ${model.net.perceiver_encoder.latent_shape}
     query_map: 'mlp'
     residual_ca: False
     num_cross_attention_heads: 16
-    query_generator:
-      _target_: semanticbev.models.components.LaRa_decoder.QueryGeneratorCollection
-      query_generators: ???
     output_adapter:
       _target_: semanticbev.models.components.LaRa_embeddings.BEVOutputAdapter
       grid_conf: ${grid_conf}
       num_output_channels: 256
+      downscale_factor: 8
+    query_generator:
+      _target_: semanticbev.models.components.LaRa_decoder.QueryGeneratorCollection
+      query_generators: ???
 
 
   bev_encoder:
@@ -59,8 +62,4 @@ net:
     upsample_mode: 'bilinear'
     blur: False
     blur_at_end: False
-
-
-
-
 

@@ -67,7 +67,6 @@ class BEVBinaryOccupancy(pl.LightningModule):
             'train/epoch': self.current_epoch
         })
 
-
         return {'loss': loss}
 
 

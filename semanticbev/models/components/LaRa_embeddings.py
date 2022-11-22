@@ -122,12 +122,12 @@ class FrustumInputEmbedding(InputEmbedding):
 
 
 class FourierQueryGenerator(QueryGenerator):
-    def __init__(self,  grid_conf, num_frequency_bands: int):
+    def __init__(self,  grid_conf, num_frequency_bands: int, downscale_factor=1):
         self.num_frequency_bands = num_frequency_bands
 
         # e.g., xbound=[-50.0, 50.0, 0.5]    min, max, resolution
         axis_bounds = [grid_conf['ybound'], grid_conf['xbound']]
-        self.bev_shape = tuple([int((bound[1] - bound[0]) / bound[2]) for bound in axis_bounds])
+        self.bev_shape = tuple([int((bound[1] - bound[0]) / bound[2] // downscale_factor) for bound in axis_bounds])
 
         position_encoding_channels = 2 * (2 * self.num_frequency_bands + 1)
 
@@ -144,16 +144,18 @@ class FourierQueryGenerator(QueryGenerator):
 
 
 class CoordConvQueryGenerator(QueryGenerator):
-    def __init__(self, grid_conf, with_r=False, scaling=False):
+    def __init__(self, grid_conf, with_r=False, scaling=False, downscale_factor=1):
 
         # e.g., xbound=[-50.0, 50.0, 0.5]    min, max, resolution
         axis_bounds = [grid_conf['xbound'], grid_conf['ybound']]
         self.scale_factor = [bound[2] for bound in axis_bounds]
-        self.bev_shape = tuple([int((bound[1] - bound[0]) / bound[2]) for bound in axis_bounds])
+        self.bev_shape = tuple([int((bound[1] - bound[0]) / bound[2] // downscale_factor) for bound in axis_bounds])
         self.with_r = with_r
         self.scaling = scaling
 
-        super().__init__(query_seq_len=self.bev_shape[0]*self.bev_shape[1], num_input_channels=3 if with_r else 2)
+        num_input_channels = 2 + int(with_r)
+
+        super().__init__(query_seq_len=self.bev_shape[0]*self.bev_shape[1], num_input_channels=num_input_channels)
 
     def forward(self, batch_size, device, **kwargs):
 
@@ -163,7 +165,6 @@ class CoordConvQueryGenerator(QueryGenerator):
         if self.scaling:
             for i in range(pixel_coords.shape[-1]):
                 pixel_coords[:,:,0] *= self.scale_factor[0]
-
 
         if self.with_r:
             relative_coords = torch.sqrt(torch.pow(pixel_coords, 2).sum(-1, keepdim=True))  # sqrt(x^2+y^2)
@@ -176,11 +177,11 @@ class CoordConvQueryGenerator(QueryGenerator):
 
 
 class LearnedQueryGenerator(QueryGenerator):
-    def __init__(self, grid_conf, num_channels: int = 1):
+    def __init__(self, grid_conf, num_channels: int = 1, downscale_factor=1):
 
         # e.g., xbound=[-50.0, 50.0, 0.5]    min, max, resolution
         axis_bounds = [grid_conf['xbound'], grid_conf['ybound']]
-        self.bev_shape = tuple([int((bound[1] - bound[0]) / bound[2]) for bound in axis_bounds])
+        self.bev_shape = tuple([int((bound[1] - bound[0]) / bound[2] // downscale_factor) for bound in axis_bounds])
         query_seq_len = self.bev_shape[0] * self.bev_shape[1]
 
         super().__init__(query_seq_len=query_seq_len, num_input_channels=num_channels)
@@ -199,11 +200,11 @@ class LearnedQueryGenerator(QueryGenerator):
 
 
 class BEVOutputAdapter(OutputAdapter):
-    def __init__(self, grid_conf, num_output_channels: int = 64):
+    def __init__(self, grid_conf, num_output_channels: int = 64, downscale_factor: int = 1):
 
         # e.g., xbound=[-50.0, 50.0, 0.5]    min, max, resolution
         axis_bounds = [grid_conf['xbound'], grid_conf['ybound']]
-        self.bev_shape = tuple([int((bound[1] - bound[0]) / bound[2]) for bound in axis_bounds])
+        self.bev_shape = tuple([int((bound[1] - bound[0]) / bound[2] // downscale_factor) for bound in axis_bounds])
         super().__init__(output_shape=(self.bev_shape[0]*self.bev_shape[1], num_output_channels))
 
     def forward(self, bev_flattened):
@@ -211,6 +212,4 @@ class BEVOutputAdapter(OutputAdapter):
         bev = rearrange(bev_flattened, 'b (h w) c -> b c h w', h=self.bev_shape[0], w=self.bev_shape[1])
 
         return bev
-
-
 

@@ -147,15 +147,15 @@ class Sequential(nn.Sequential):
 
 
 class Residual(nn.Module):
-    def __init__(self, module: nn.Module, dropout: float):
+    def __init__(self, module: nn.Module, drop_path: float = 0.):
         super().__init__()
         self.module = module
-        self.dropout = nn.Dropout(p=dropout)
-        self.dropout_p = dropout
+
+        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
 
     def forward(self, *args, **kwargs):
         x = self.module(*args, **kwargs)
-        return self.dropout(x) + args[0]
+        return self.drop_path(x) + args[0]
 
 
 class MultiHeadAttention(nn.Module):
@@ -180,12 +180,12 @@ class CrossAttention(nn.Module):
     # whereas in the paper it can be specified separately. This simplification allows re-use of the
     # torch.nn.MultiHeadAttention module whereas a full implementation of the paper would require a
     # custom multi-head attention implementation.
-    def __init__(self, num_q_channels: int, num_kv_channels: int, num_heads: int, dropout: float):
+    def __init__(self, num_q_channels: int, num_kv_channels: int, num_heads: int):
         super().__init__()
         self.q_norm = nn.LayerNorm(num_q_channels)
         self.kv_norm = nn.LayerNorm(num_kv_channels)
         self.attention = MultiHeadAttention(
-            num_q_channels=num_q_channels, num_kv_channels=num_kv_channels, num_heads=num_heads, dropout=dropout
+            num_q_channels=num_q_channels, num_kv_channels=num_kv_channels, num_heads=num_heads
         )
 
     def forward(self, x_q, x_kv, pad_mask=None, attn_mask=None):
@@ -194,11 +194,11 @@ class CrossAttention(nn.Module):
         return self.attention(x_q, x_kv, pad_mask=pad_mask, attn_mask=attn_mask)
 
 class SelfAttention(nn.Module):
-    def __init__(self, num_channels: int, num_heads: int, dropout: float):
+    def __init__(self, num_channels: int, num_heads: int):
         super().__init__()
         self.norm = nn.LayerNorm(num_channels)
         self.attention = MultiHeadAttention(
-            num_q_channels=num_channels, num_kv_channels=num_channels, num_heads=num_heads, dropout=dropout
+            num_q_channels=num_channels, num_kv_channels=num_channels, num_heads=num_heads
         )
 
     def forward(self, x, pad_mask=None, attn_mask=None):
@@ -207,38 +207,102 @@ class SelfAttention(nn.Module):
 
 
 def cross_attention_layer(
-        num_q_channels: int, num_kv_channels: int, num_heads: int, dropout: float,
+        num_q_channels: int, num_kv_channels: int, num_heads: int, scale_init: float = 0., drop_path: float = 0.,
         activation_checkpoint: bool = False, residual_ca: bool = True
 ):
 
     if residual_ca:
-        ca = Residual(CrossAttention(num_q_channels, num_kv_channels, num_heads, dropout), dropout)
+        ca = Residual(
+            LayerScaleModule(CrossAttention(num_q_channels, num_kv_channels, num_heads), num_q_channels, scale_init),
+            drop_path
+        )
     else:
-        ca = CrossAttention(num_q_channels, num_kv_channels, num_heads, dropout)
+        ca = CrossAttention(num_q_channels, num_kv_channels, num_heads)
 
     layer = Sequential(
         ca,
-        Residual(mlp(num_q_channels), dropout),
+        Residual(LayerScaleModule(mlp(num_q_channels), num_q_channels, scale_init), drop_path),
     )
     return layer if not activation_checkpoint else checkpoint_wrapper(layer)
 
 
 def self_attention_layer(
-        num_channels: int, num_heads: int, dropout: float, activation_checkpoint: bool = False
+        num_channels: int, num_heads: int, scale_init: float = 0., drop_path: float = 0.,
+        activation_checkpoint: bool = False
 ):
     layer = Sequential(
-        Residual(SelfAttention(num_channels, num_heads, dropout), dropout),
-        Residual(mlp(num_channels), dropout)
+        Residual(LayerScaleModule(SelfAttention(num_channels, num_heads), num_channels, scale_init), drop_path),
+        Residual(LayerScaleModule(mlp(num_channels), num_channels, scale_init), drop_path)
     )
     return layer if not activation_checkpoint else checkpoint_wrapper(layer)
 
 
 def self_attention_block(
-        num_layers: int, num_channels: int, num_heads: int, dropout: float, activation_checkpoint: bool = False
+        num_layers: int, num_channels: int, num_heads: int, scale_init: float = 0., drop_path: float = 0.,
+        activation_checkpoint: bool = False
 ):
     layers = [
-        self_attention_layer(num_channels, num_heads, dropout, activation_checkpoint)
+        self_attention_layer(num_channels, num_heads, scale_init, drop_path, activation_checkpoint)
         for _ in range(num_layers)
     ]
 
     return Sequential(*layers)
+
+
+
+
+# https://github.com/rwightman/pytorch-image-models/blob/475ecdfa3d369b6d482287f2467ce101ce5c276c/timm/models/layers/drop.py
+def drop_path_fn(x, drop_prob: float = 0., training: bool = False, scale_by_keep: bool = True):
+    """Drop paths (Stochastic Depth) per sample (when applied in main path of residual blocks).
+    This is the same as the DropConnect impl I created for EfficientNet, etc networks, however,
+    the original name is misleading as 'Drop Connect' is a different form of dropout in a separate paper...
+    See discussion: https://github.com/tensorflow/tpu/issues/494#issuecomment-532968956 ... I've opted for
+    changing the layer and argument names to 'drop path' rather than mix DropConnect as a layer name and use
+    'survival rate' as the argument.
+    """
+    if drop_prob == 0. or not training:
+        return x
+    keep_prob = 1 - drop_prob
+    shape = (x.shape[0],) + (1,) * (x.ndim - 1)  # work with diff dim tensors, not just 2D ConvNets
+    random_tensor = x.new_empty(shape).bernoulli_(keep_prob)
+    if keep_prob > 0.0 and scale_by_keep:
+        random_tensor.div_(keep_prob)
+    return x * random_tensor
+
+
+class DropPath(nn.Module):
+    """Drop paths (Stochastic Depth) per sample  (when applied in main path of residual blocks).
+    """
+    def __init__(self, drop_prob: float = 0., scale_by_keep: bool = True):
+        super().__init__()
+        self.drop_prob = drop_prob
+        self.scale_by_keep = scale_by_keep
+
+    def forward(self, x):
+        return drop_path_fn(x, self.drop_prob, self.training, self.scale_by_keep)
+
+    def extra_repr(self):
+        return f'drop_prob={round(self.drop_prob,3):0.3f}'
+
+
+class LayerScale(nn.Module):
+    def __init__(self, dim: int, init_value: float = 0.):
+        super().__init__()
+
+        self.gamma = nn.Parameter(init_value * torch.ones((dim)), requires_grad=True)
+
+    def forward(self, x):
+        return self.gamma * x
+
+
+class LayerScaleModule(nn.Module):
+    def __init__(self, module: nn.Module, dim: int, init_value: float = 0.):
+        super().__init__()
+
+        self.module = module
+
+        self.layer_scale = LayerScale(dim, init_value) if init_value > 0. else nn.Identity()
+
+    def forward(self, *args, **kwargs):
+        x = self.layer_scale(self.module(*args, **kwargs))
+        return x
