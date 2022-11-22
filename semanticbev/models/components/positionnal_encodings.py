@@ -6,16 +6,16 @@ from typing import Optional, Tuple
 from functools import lru_cache
 
 #@lru_cache(maxsize=None)
-def meshgrid(spatial_shape, normalized=True, indexing='ij'):
+def meshgrid(spatial_shape, normalized=True, indexing='ij', device=None):
     """Create evenly spaced position coordinates for self.spatial_shape with values in [v_min, v_max].
     :param v_min: minimum coordinate value per dimension.
     :param v_max: maximum coordinate value per dimension.
     :return: position coordinates tensor of shape (*shape, len(shape)).
     """
     if normalized:
-        axis_coords = [torch.linspace(-1., 1., steps=s) for s in spatial_shape]
+        axis_coords = [torch.linspace(-1., 1., steps=s, device=device) for s in spatial_shape]
     else:
-        axis_coords = [torch.linspace(0, s-1, steps=s) for s in spatial_shape]
+        axis_coords = [torch.linspace(0, s-1, steps=s, device=device) for s in spatial_shape]
 
     grid_coords = torch.meshgrid(*axis_coords, indexing=indexing)
 

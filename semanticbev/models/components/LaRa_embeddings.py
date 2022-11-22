@@ -34,7 +34,7 @@ class FourierInputEmbedding(InputEmbedding):
 class LearnedCamInputEmbedding(InputEmbedding):
     def __init__(self, num_cams: int = 6):
 
-        super().__init__(num_input_channels= 1)
+        super().__init__(num_input_channels=1)
 
         self.cam_embedding = nn.Parameter(torch.randn(num_cams))
 
@@ -65,8 +65,8 @@ class CamMatrixInputEmbedding(InputEmbedding):
         updated_intrinsics[:, :, 1, 2] *= 1 / input_stride
 
         # create positionnal encodings
-        pixel_coords = meshgrid((w, h), normalized=False, indexing='xy').to(device=x.device)
-        ones = torch.ones((h, w, 1)).to(device=x.device)
+        pixel_coords = meshgrid((w, h), normalized=False, indexing='xy', device=x.device)
+        ones = torch.ones((h, w, 1), device=x.device)
         pixel_coords = torch.cat([pixel_coords, ones], dim=-1)  # [x, y, 1] vectors
         pixel_coords = rearrange(pixel_coords, 'h w c -> c (h w)')
         pixel_coords = repeat(pixel_coords, '... -> b n ...', b=b, n=n)
@@ -100,13 +100,13 @@ class FrustumInputEmbedding(InputEmbedding):
 
 
         # create positionnal encodings
-        pixel_coords = meshgrid((w, h), normalized=False, indexing='xy').to(device=x.device)
-        ones = torch.ones((h, w, 1)).to(device=x.device)
+        pixel_coords = meshgrid((w, h), normalized=False, indexing='xy', device=x.device)
+        ones = torch.ones((h, w, 1), device=x.device)
         pixel_coords = torch.cat([pixel_coords, ones], dim=-1)  # [x, y, 1] vectors
 
 
         i = torch.arange(0, self.n_bins + 1, dtype=torch.float)
-        depth_grid = torch.exp(np.log(self.dmin) + np.log(self.dmax/self.dmin) * i/self.n_bins).to(device=x.device)
+        depth_grid = torch.exp(np.log(self.dmin) + np.log(self.dmax/self.dmin) * i/self.n_bins, device=x.device)
 
         frustum_coords = repeat(pixel_coords, '... -> d ...', d=self.n_bins+1)
         frustum_coords = frustum_coords * repeat(depth_grid, 'd-> d 1 1 1')
@@ -135,7 +135,7 @@ class FourierQueryGenerator(QueryGenerator):
 
     def forward(self, batch_size, device, **kwargs):
         # create positionnal encodings
-        pixel_coords = meshgrid(self.bev_shape, indexing='ij').to(device=device)
+        pixel_coords = meshgrid(self.bev_shape, indexing='ij', device=device)
         position_encoding = position_encodings(pixel_coords, self.num_frequency_bands) # H, W, C
         position_encoding = rearrange(position_encoding, '... c -> (...) c') # flatten encodings on spatial dimensions
         position_encoding = repeat(position_encoding, '... -> b ...', b=batch_size) # repeat along batch dimension
@@ -160,7 +160,7 @@ class CoordConvQueryGenerator(QueryGenerator):
     def forward(self, batch_size, device, **kwargs):
 
         # x and y coords in range [-1, 1], one axis encoding by channel
-        pixel_coords = meshgrid(self.bev_shape, normalized=True, indexing='ij').to(device=device)  # (*image_shape, len(image_shape))
+        pixel_coords = meshgrid(self.bev_shape, normalized=True, indexing='ij', device=device)  # (*image_shape, len(image_shape))
 
         if self.scaling:
             for i in range(pixel_coords.shape[-1]):
