@@ -30,3 +30,4 @@ model:
             _target_: semanticbev.models.components.LaRa_embeddings.LearnedQueryGenerator
             grid_conf: ${grid_conf}
             num_channels: 32
+            downscale_factor: ${model.net.latent_decoder.output_adapter.downscale_factor}

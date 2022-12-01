@@ -6,7 +6,7 @@ import numpy as np
 
 from semanticbev.models.components.LaRa_encoder import InputEmbedding
 from semanticbev.models.components.LaRa_decoder import OutputAdapter, QueryGenerator
-from semanticbev.models.components.positionnal_encodings import meshgrid, position_encodings
+from semanticbev.models.components.positional_encodings import meshgrid, position_encodings
 
 
 

@@ -24,35 +24,34 @@ net:
     num_self_attention_layers_per_block: 4
     layerscale_init: 0.00001
     drop_path: 0.
-    input_adapter:
+    input_embedding:
       _target_: semanticbev.models.components.LaRa_encoder.InputEmbeddingCollection
       num_image_channels: ${model.net.cam_encoder.num_out_channels}
       embedding_map: 'mlp'
       embedding_channels: 128
       embedding_merge: 'concat'
       input_prenorm: False
-      input_adapters: ???
+      input_embeddings: ???
 
 
   latent_decoder:
     _target_: semanticbev.models.components.LaRa_decoder.LaRaDecoder
-    latent_shape: ${model.net.perceiver_encoder.latent_shape}
+    latent_shape: ${model.net.latent_encoder.latent_shape}
     query_map: 'mlp'
     residual_ca: False
     num_cross_attention_heads: 16
+    query_generator:
+      _target_: semanticbev.models.components.LaRa_decoder.QueryGeneratorCollection
+      query_generators: ???
     output_adapter:
       _target_: semanticbev.models.components.LaRa_embeddings.BEVOutputAdapter
       grid_conf: ${grid_conf}
       num_output_channels: 256
       downscale_factor: 8
-    query_generator:
-      _target_: semanticbev.models.components.LaRa_decoder.QueryGeneratorCollection
-      query_generators: ???
-
 
   bev_encoder:
     _target_: semanticbev.models.components.pyramid_decoder.PyramidDecoder
-    in_dim: ${model.net.perceiver_decoder.output_adapter.num_output_channels}
+    in_dim: ${model.net.latent_decoder.output_adapter.num_output_channels}
     out_dims: [256,128,64]
     pred_dim: 1
     activation: ReLU

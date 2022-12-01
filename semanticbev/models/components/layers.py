@@ -159,7 +159,7 @@ class Residual(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, num_q_channels: int, num_kv_channels: int, num_heads: int, dropout: float):
+    def __init__(self, num_q_channels: int, num_kv_channels: int, num_heads: int, dropout: float = 0.):
         super().__init__()
         self.attention = nn.MultiheadAttention(
             embed_dim=num_q_channels,
@@ -207,21 +207,20 @@ class SelfAttention(nn.Module):
 
 
 def cross_attention_layer(
-        num_q_channels: int, num_kv_channels: int, num_heads: int, scale_init: float = 0., drop_path: float = 0.,
+        num_q_channels: int, num_kv_channels: int, num_heads: int, scale_init: float = 0.,
         activation_checkpoint: bool = False, residual_ca: bool = True
 ):
 
     if residual_ca:
         ca = Residual(
             LayerScaleModule(CrossAttention(num_q_channels, num_kv_channels, num_heads), num_q_channels, scale_init),
-            drop_path
         )
     else:
         ca = CrossAttention(num_q_channels, num_kv_channels, num_heads)
 
     layer = Sequential(
         ca,
-        Residual(LayerScaleModule(mlp(num_q_channels), num_q_channels, scale_init), drop_path),
+        Residual(LayerScaleModule(mlp(num_q_channels), num_q_channels, scale_init)),
     )
     return layer if not activation_checkpoint else checkpoint_wrapper(layer)
 

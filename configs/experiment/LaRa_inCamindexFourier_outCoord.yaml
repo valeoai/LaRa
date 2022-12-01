@@ -34,6 +34,7 @@ model:
             _target_: semanticbev.models.components.LaRa_embeddings.CoordConvQueryGenerator
             grid_conf: ${grid_conf}
             with_r: True
+            downscale_factor: ${model.net.latent_decoder.output_adapter.downscale_factor}
 
 
 

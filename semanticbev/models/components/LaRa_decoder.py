@@ -66,7 +66,6 @@ class LaRaDecoder(nn.Module):
             query_generator: QueryGenerator,
             latent_shape: Tuple[int, int],  # as produced by model encoder
             num_cross_attention_heads: int = 4,
-            dropout: float = 0.0,
             activation_checkpoint: bool = False,
             query_map: str = 'mlp',
             residual_ca: bool = True,
@@ -76,7 +75,6 @@ class LaRaDecoder(nn.Module):
         query_generator: Defines the embedding to use as query for the decoder cross-attention
         latent_shape: Shape of the latent array (K, D)
         num_cross_attention_heads: Number of cross-attention heads.
-        dropout: Dropout for cross-attention layers and residuals.
         activation_checkpoint: If True, implements an activation checkpoint for the decoder's cross-attention layer.
         query_map: Operation to apply on the query embedding before cross-attention 'identity', 'linear' or 'mlp'
         residual_ca: Whether the cross-attention of the decoder is residual or not. If the query is a set of coordinates
@@ -93,7 +91,6 @@ class LaRaDecoder(nn.Module):
             num_q_channels=num_output_channels,
             num_kv_channels=num_latent_channels,
             num_heads=num_cross_attention_heads,
-            dropout=dropout,
             activation_checkpoint=activation_checkpoint,
             residual_ca=residual_ca,
         )
