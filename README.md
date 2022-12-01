@@ -69,6 +69,12 @@ You can override any parameter from the command line like this
 python train.py trainer.max_epochs=20 datamodule.batch_size=64 model=LaRaUP experiment=LaRa_inCamrays_outFourier
 ```
 
+The ground-truth BEV map will be color-coded when logged to Tensorboard:
+- RED visibility of whole object is between and 0 and 40% (visibility=1)
+- GREEN visibility of whole object is between and 40 and 60% (visibility=2)
+- CYAN visibility of whole object is between and 60 and 80% (visibility=3)
+- YELLOW visibility of whole object is between and 80 and 100% (visibility=4)
+
 ## 🎖️ Acknowledgements
 
 This project used or adapted code from:

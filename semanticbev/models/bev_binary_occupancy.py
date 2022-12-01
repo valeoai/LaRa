@@ -1,14 +1,13 @@
-from collections import defaultdict
 import matplotlib.pyplot as plt
 
-import torch
+import torch.nn as nn
 import pytorch_lightning as pl
 import hydra
 
 from semanticbev.utils.losses import SimpleLoss
 from semanticbev.utils.wandb_logging import prepare_images_to_log as wandb_prep_images
 from semanticbev.utils.tensorboard_logging import prepare_images_to_log as tensorboard_prep_images
-from semanticbev.utils.metrics import IntersectionOverUnion
+from semanticbev.utils.metrics import BCEMetric, IoUMetric, IoUMetricPerDistance, get_str_interval
 
 
 TENSORBOARD_LOGGER_KEY = 'tensorboard'
@@ -39,8 +38,32 @@ class BEVBinaryOccupancy(pl.LightningModule):
         self.network = hydra.utils.instantiate(net)
 
         self.loss_fn = SimpleLoss(pos_weight)
+        self.bce_metric = BCEMetric(pos_weight)
 
-        self.metric_iou_val = IntersectionOverUnion(None)
+        self.metric_iou_vis1 = IoUMetric(thresholds=0.5, min_visibility=1)
+        self.metric_iou_vis2 = IoUMetric(thresholds=0.5, min_visibility=2)
+
+
+        # intervals in percentages (the BEV map is a square so we need >100% to compute metric at corners)
+        intervals = [
+            [0., 0.1],
+            [0.1, 0.2],
+            [0.2, 0.4],
+            [0.4, 0.6],
+            [0.6, 0.8],
+            [0.8, 1.],
+            [1., 1.5],
+        ]
+        self.metric_iou_per_distance_vis1 = nn.ModuleDict({
+            get_str_interval(interval): IoUMetricPerDistance(thresholds=0.5, min_visibility=1,
+                                                             normalized_interval=interval)
+            for interval in intervals
+        })
+        self.metric_iou_per_distance_vis2 = nn.ModuleDict({
+            get_str_interval(interval): IoUMetricPerDistance(thresholds=0.5, min_visibility=2,
+                                                             normalized_interval=interval)
+            for interval in intervals
+        })
 
         self.logger_name = logger_name
 
@@ -69,51 +92,72 @@ class BEVBinaryOccupancy(pl.LightningModule):
 
         return {'loss': loss}
 
-
     def validation_step(self, batch, batch_idx):
         preds = self(batch)
 
-        loss = self.loss_fn(preds, batch['binimg']) * preds.shape[0]  # loss_fn is an average -> multiply by batch size
+        self.bce_metric(preds, batch['binimg'])
 
-        self.metric_iou_val(preds.sigmoid(), batch['binimg'].int())
+        self.metric_iou_vis1(preds.sigmoid(), batch['binimg'], batch['visibility'].int())
+        self.metric_iou_vis2(preds.sigmoid(), batch['binimg'], batch['visibility'].int())
 
-        metrics = {'loss': loss.item()}
+        for metric_iou in self.metric_iou_per_distance_vis1.values():
+            metric_iou(preds.sigmoid(), batch['binimg'], batch['visibility'].int())
+        for metric_iou in self.metric_iou_per_distance_vis2.values():
+            metric_iou(preds.sigmoid(), batch['binimg'], batch['visibility'].int())
 
-        images = self.prep_images('val', batch, batch['binimg'], preds.sigmoid(), batch_idx, log_images_interval=200)
+        images = self.prep_images('val', batch, preds.sigmoid(), batch_idx, log_images_interval=200)
 
-        return {'metrics': metrics, 'images': images}
+        return {'images': images}
 
     def validation_epoch_end(self, validation_step_outputs):
 
         self.log_images(validation_step_outputs)
 
-        metrics = defaultdict(list)
-        for output in validation_step_outputs:
-            for k, v in output['metrics'].items():
-                metrics[k].append(v)  # at this point v is a float
-        metrics = {k: torch.tensor(v) for k, v in metrics.items()}
-
-        loss = metrics['loss'].mean()
-        # iou = metrics['intersect'].sum() / metrics['union'].sum()
+        loss = self.bce_metric.compute().item()
+        self.log('val_loss', loss, prog_bar=False, logger=False)  # ModelCheckpoint monitor
 
         log_dict = {'val/loss': loss}
 
-        scores = self.metric_iou_val.compute()
+        #### SCORES PER VISIBILITY LEVEL
+        scores = self.metric_iou_vis1.compute()
         if not isinstance(scores, list):
             scores = [scores]
         for key, value in zip(['vehicles'], scores):
-            log_dict[f'val/iou_{key}'] = value
-            self.log(f'val_iou_{key}', value, prog_bar=True, logger=False) # ModelCheckpoint monitor
-        self.metric_iou_val.reset()
+            log_dict[f'val/iou_vis1_{key}'] = value
+            self.log(f'val_iou_{key}', value.item(), prog_bar=True, logger=False)  # ModelCheckpoint monitor
+        self.metric_iou_vis1.reset()
+
+        scores = self.metric_iou_vis2.compute()
+        if not isinstance(scores, list):
+            scores = [scores]
+        for key, value in zip(['vehicles'], scores):
+            log_dict[f'val/iou_vis2_{key}'] = value.item()
+        self.metric_iou_vis2.reset()
+
+        #### SCORES PER DISTANCE
+        for interval, metric_iou in self.metric_iou_per_distance_vis1.items():
+            scores = metric_iou.compute()
+            if not isinstance(scores, list):
+                scores = [scores]
+            for key, value in zip(['vehicles'], scores):
+                log_dict[f'val_distances/iou_vis1_{interval}_{key}'] = value.item()
+            metric_iou.reset()
+
+        for interval, metric_iou in self.metric_iou_per_distance_vis2.items():
+            scores = metric_iou.compute()
+            if not isinstance(scores, list):
+                scores = [scores]
+            for key, value in zip(['vehicles'], scores):
+                log_dict[f'val_distances/iou_vis2_{interval}_{key}'] = value.item()
+            metric_iou.reset()
 
         self.log_dict(log_dict)
-        self.log('val_loss', loss, prog_bar=False, logger=False)  # ModelCheckpoint monitor
 
-    def prep_images(self, learning_phase, batch, binimg, preds, batch_idx, log_images_interval):
+    def prep_images(self, learning_phase, batch, preds, batch_idx, log_images_interval):
         if self.logger_name == WANDB_LOGGER_KEY:
-            images = wandb_prep_images(learning_phase, batch, binimg, preds, batch_idx, log_images_interval)
+            images = wandb_prep_images(learning_phase, batch, preds, batch_idx, log_images_interval)
         elif self.logger_name == TENSORBOARD_LOGGER_KEY:
-            images = tensorboard_prep_images(learning_phase, batch, binimg, preds, batch_idx, log_images_interval)
+            images = tensorboard_prep_images(learning_phase, batch, preds, batch_idx, log_images_interval)
         else:
             images = {}
 
@@ -178,3 +222,6 @@ class BEVBinaryOccupancy(pl.LightningModule):
         }
 
         return {"optimizer": optimizer, "lr_scheduler": lr_scheduler_config}
+
+    def on_save_checkpoint(self, checkpoint):
+        checkpoint['model_class_path'] = self.__module__ + '.' + self.__class__.__qualname__

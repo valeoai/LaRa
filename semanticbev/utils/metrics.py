@@ -1,67 +1,140 @@
-from typing import Optional
+from typing import Optional, List
 
 import torch
 from torchmetrics.metric import Metric
-from torchmetrics.functional import stat_scores
+
+from semanticbev.models.components.positional_encodings import meshgrid
+from einops import rearrange, repeat
 
 
-class IntersectionOverUnion(Metric):
-    """Computes intersection-over-union."""
-    def __init__(
-        self,
-        n_classes: Optional[int] = None,
-        threshold: float = 0.5,
-        ignore_index: Optional[int] = None,
-        absent_score: float = 0.0,
-        compute_on_step: bool = False,
-    ):
-        super().__init__(compute_on_step=compute_on_step)
 
-        self.n_classes = n_classes
-        self.threshold = threshold
-        self.ignore_index = ignore_index
-        self.absent_score = absent_score
+def get_str_interval(interval):
+    str_interval = [str(int(e*100)) for e in interval]
+    str_interval = '-'.join(str_interval)
+    return str_interval
 
-        self.buffer_size = 1 if n_classes is None else n_classes
+class BCEMetric(Metric):
+    """
+    Computes BCE as a metric
+    """
+    def __init__(self, pos_weight: float):
+        super().__init__()
 
-        self.add_state('true_positive', default=torch.zeros(self.buffer_size), dist_reduce_fx='sum')
-        self.add_state('false_positive', default=torch.zeros(self.buffer_size), dist_reduce_fx='sum')
-        self.add_state('false_negative', default=torch.zeros(self.buffer_size), dist_reduce_fx='sum')
-        self.add_state('support', default=torch.zeros(self.buffer_size), dist_reduce_fx='sum')
+        self.loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([pos_weight]), reduction='sum')
 
-    def update(self, prediction: torch.Tensor, target: torch.Tensor):
-        tps, fps, _, fns, sups = stat_scores(prediction, target, threshold=self.threshold, num_classes=self.n_classes)
+        self.add_state('loss', default=torch.zeros(1), dist_reduce_fx='sum')
+        self.add_state('n_obs', default=torch.zeros(1), dist_reduce_fx='sum')
 
-        self.true_positive += tps
-        self.false_positive += fps
-        self.false_negative += fns
-        self.support += sups
+    def update(self, pred, label):
+        self.loss += self.loss_fn(pred, label)
+        self.n_obs += pred.numel()
 
     def compute(self):
+        return self.loss / self.n_obs
 
-        scores = torch.zeros(self.buffer_size, device=self.true_positive.device, dtype=torch.float32)
 
-        for class_idx in range(self.buffer_size):
-            if class_idx == self.ignore_index:
-                continue
+class BaseIoUMetric(Metric):
+    """
+    Computes intersection over union at given thresholds
+    """
+    def __init__(self, thresholds=0.5):
+        super().__init__(dist_sync_on_step=False, compute_on_step=False)
 
-            tp = self.true_positive[class_idx]
-            fp = self.false_positive[class_idx]
-            fn = self.false_negative[class_idx]
-            sup = self.support[class_idx]
+        self.thresholds = thresholds
 
-            # If this class is absent in the target (no support) AND absent in the pred (no true or false
-            # positives), then use the absent_score for this class.
-            if sup + tp + fp == 0:
-                scores[class_idx] = self.absent_score
-                continue
+        self.add_state('tp', default=torch.zeros(1), dist_reduce_fx='sum')
+        self.add_state('fp', default=torch.zeros(1), dist_reduce_fx='sum')
+        self.add_state('fn', default=torch.zeros(1), dist_reduce_fx='sum')
 
-            denominator = tp + fp + fn
-            score = tp.to(torch.float) / denominator
-            scores[class_idx] = score
+    def update(self, pred, label):
+        pred = pred.detach().reshape(-1)
+        label = label.detach().bool().reshape(-1)
 
-        # Remove the ignored class index from the scores.
-        if (self.ignore_index is not None) and (0 <= self.ignore_index < self.buffer_size):
-            scores = torch.cat([scores[:self.ignore_index], scores[self.ignore_index+1:]])
+        pred = pred[:, None] >= self.thresholds
+        label = label[:, None]
 
-        return scores
+        self.tp += (pred & label).sum(0)
+        self.fp += (pred & ~label).sum(0)
+        self.fn += (~pred & label).sum(0)
+
+    def compute(self):
+        ious = self.tp / (self.tp + self.fp + self.fn + 1e-7)
+
+        return ious
+
+
+class IntersectionOverInstanceMetric(BaseIoUMetric):
+    def __init__(self, thresholds: float):
+        super().__init__(thresholds)
+
+    def update(self, pred, label, *args):
+
+        mask = label > 0
+
+        pred = pred[mask]
+        label = label[mask]
+
+        return super().update(pred, label)
+
+
+class IoUMetric(BaseIoUMetric):
+    def __init__(self, thresholds: float, min_visibility: Optional[int] = None):
+        """
+        label_indices:
+            transforms labels (c, h, w) to (len(labels), h, w)
+            see config/experiment/* for examples
+        min_visibility:
+            passing "None" will ignore the visibility mask
+            otherwise uses visibility values to ignore certain labels
+            visibility mask is in order of "increasingly visible" {1, 2, 3, 4, 255 (default)}
+            see https://github.com/nutonomy/nuscenes-devkit/blob/master/docs/schema_nuscenes.md#visibility
+        """
+        super().__init__(thresholds)
+
+        self.min_visibility = min_visibility
+
+    def update(self, pred, label, visibility):
+
+        if self.min_visibility is not None:
+            mask = visibility >= self.min_visibility
+
+            pred = pred[mask]
+            label = label[mask]
+
+        return super().update(pred, label)
+
+
+class IoUMetricPerDistance(BaseIoUMetric):
+    def __init__(self, thresholds: float, min_visibility: Optional[int] = None, normalized_interval=(0., 1.)):
+        """
+        label_indices:
+            transforms labels (c, h, w) to (len(labels), h, w)
+            see config/experiment/* for examples
+        min_visibility:
+            passing "None" will ignore the visibility mask
+            otherwise uses visibility values to ignore certain labels
+            visibility mask is in order of "increasingly visible" {1, 2, 3, 4, 255 (default)}
+            see https://github.com/nutonomy/nuscenes-devkit/blob/master/docs/schema_nuscenes.md#visibility
+        """
+        super().__init__(thresholds)
+
+        self.normalized_inerval = normalized_interval
+
+        self.min_visibility = min_visibility
+
+    def update(self, pred, label, visibility):
+        b = pred.shape[0]
+
+        mask = meshgrid(pred.shape[-2:], device=pred.device).pow(2).sum(dim=-1).sqrt()
+        mask = (mask >= self.normalized_inerval[0]) & (mask < self.normalized_inerval[1])
+
+        mask = rearrange(mask, '... -> 1 1 ...')
+        mask = repeat(mask, '1 ... -> b ...', b=b)
+
+        if self.min_visibility is not None:
+            mask = mask & (visibility >= self.min_visibility)
+
+            pred = pred[mask]
+            label = label[mask]
+
+        return super().update(pred, label)

@@ -77,7 +77,33 @@ def prep_image(image):
     return image
 
 
-def prepare_images_to_log(learning_phase, batch, binimgs, preds, batch_idx, log_images_interval):
+def prep_visibility_map(visibility):
+
+    v = visibility.clone().int()[0]
+    visibility_map = torch.zeros(3, 200, 200, dtype=int)
+
+    # visibility=1  visibility of whole object is between and 0 and 40% (red)
+    visibility_map[0, :, :][v == 1] = 255
+
+    # visibility=2  visibility of whole object is between and 40 and 60% (green)
+    visibility_map[1, :, :][v == 2] = 255
+
+    # visibility=3  visibility of whole object is between and 60 and 80% (cyan)
+    visibility_map[1, :, :][v == 3] = 255
+    visibility_map[2, :, :][v == 3] = 255
+
+    # visibility=4  visibility of whole object is between and 80 and 100% (yellow)
+    visibility_map[0, :, :][v == 4] = 255
+    visibility_map[1, :, :][v == 4] = 255
+
+    visibility_map[0, :, :][v == 255] = 0
+    visibility_map[1, :, :][v == 255] = 0
+    visibility_map[2, :, :][v == 255] = 0
+
+    return visibility_map
+
+
+def prepare_images_to_log(learning_phase, batch, preds, batch_idx, log_images_interval):
     if log_images_interval == 0 or batch_idx % log_images_interval != 0:
         return {}
 
@@ -85,7 +111,12 @@ def prepare_images_to_log(learning_phase, batch, binimgs, preds, batch_idx, log_
 
     prefix = f"{learning_phase}/batch{batch_idx}"
 
-    img_list = [prep_image(preds[i].sigmoid()), prep_image(binimgs[i])]
+    visibility_map = prep_visibility_map(batch['visibility'][i])
+
+    img_list = [
+        prep_image(preds[i].sigmoid()),
+        prep_image(visibility_map)
+    ]
     titles = ['pred', 'gt']
     cmaps = ['gray', 'gray']
 
