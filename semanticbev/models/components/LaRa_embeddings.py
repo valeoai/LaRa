@@ -49,9 +49,11 @@ class LearnedCamInputEmbedding(InputEmbedding):
         return cam_embedding
 
 class CamMatrixInputEmbedding(InputEmbedding):
-    def __init__(self):
+    def __init__(self, plucker=False):
 
-        super().__init__(num_input_channels=6)
+        self.plucker = plucker
+
+        super().__init__(num_input_channels=6 + int(plucker)*3)
 
     def forward(self, x, rots, trans, intrins, input_stride, **kwargs):
         b, n, h, w, c = x.shape
@@ -67,17 +69,30 @@ class CamMatrixInputEmbedding(InputEmbedding):
         # create positionnal encodings
         pixel_coords = meshgrid((w, h), normalized=False, indexing='xy', device=x.device)
         ones = torch.ones((h, w, 1), device=x.device)
-        pixel_coords = torch.cat([pixel_coords, ones], dim=-1)  # [x, y, 1] vectors
+
+        pixel_coords = torch.cat([pixel_coords, ones], dim=-1)  # [x, y, 1] vectors of pixel coordinates
         pixel_coords = rearrange(pixel_coords, 'h w c -> c (h w)')
         pixel_coords = repeat(pixel_coords, '... -> b n ...', b=b, n=n)
-        rays = rots @ updated_intrinsics.inverse() @ pixel_coords
-        rays = rays / rays.norm(dim=2, keepdim=True) # rays.shape = [B, N, 3, K]   where n # of cams, K # of pixels
-        centers = repeat(trans, 'b n c -> b n c k', k=rays.shape[-1])
+        # pixel_coords.shape = [B, N, 3, K] | N # of cams, K # of pixels
+        pixel_coords = rots @ updated_intrinsics.inverse() @ pixel_coords
+        # at this point pixel_coords are x,y,z pixel coords in ego-car ref frame at depth=1meter
+        # if we want the true 3D position of pixels we would need scale coords by the focal length in meter
+        # here we just want the unit vector defining the ray going passing through the cam origin and the pixel
+        normed_dirs = pixel_coords / pixel_coords.norm(dim=2, keepdim=True)
 
-        rays = rearrange(rays, 'b n c k -> b (n k) c')
-        centers = rearrange(centers, 'b n c k -> b (n k) c')
+        cam_origins = repeat(trans, 'b n c -> b n c k', k=normed_dirs.shape[-1])
 
-        return torch.cat([centers, rays], dim=-1)
+        normed_dirs = rearrange(normed_dirs, 'b n c k -> b (n k) c')
+        cam_origins = rearrange(cam_origins, 'b n c k -> b (n k) c')
+
+        output = [cam_origins, normed_dirs]
+
+        if self.plucker:
+            cross = torch.cross(cam_origins, normed_dirs)
+            output.append(cross)
+
+        return torch.cat(output, dim=-1)
+
 
 class FrustumInputEmbedding(InputEmbedding):
     def __init__(self, dmin, dmax, n_bins):

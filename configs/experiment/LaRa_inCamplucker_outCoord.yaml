@@ -21,7 +21,7 @@ model:
         input_embeddings:
           cam_rays:
             _target_: semanticbev.models.components.LaRa_embeddings.CamMatrixInputEmbedding
-            plucker: False
+            plucker: True
 
     latent_decoder:
       query_generator:

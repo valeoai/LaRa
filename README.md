@@ -56,6 +56,10 @@ Change the paths present in the `.env` file to configure the saving dir and the 
 > A smaller and faster version of LaRa is available with `model=LaRaUP`.
 > BEV features are first predicted at 25x25 resolution and then upsampled to 200x200.
 
+> **Note**
+> Results also improve with integrating plucker coordinates as geometric embedding (in addition to cam origin and ray direction)
+> We recommand using `experiment=LaRa_inCamplucker_outCoord`
+
 
 Train model with chosen experiment configuration from [configs/experiment/](configs/experiment/)
 
