@@ -45,6 +45,7 @@ net:
       _target_: semanticbev.models.components.LaRa_embeddings.BEVOutputAdapter
       grid_conf: ${grid_conf}
       num_output_channels: 256
+      downscale_factor: 1
 
 
   bev_encoder:

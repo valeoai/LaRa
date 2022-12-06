@@ -75,14 +75,16 @@ class CamMatrixInputEmbedding(InputEmbedding):
         pixel_coords = repeat(pixel_coords, '... -> b n ...', b=b, n=n)
         # pixel_coords.shape = [B, N, 3, K] | N # of cams, K # of pixels
         pixel_coords = rots @ updated_intrinsics.inverse() @ pixel_coords
+
         # at this point pixel_coords are x,y,z pixel coords in ego-car ref frame at depth=1meter
         # if we want the true 3D position of pixels we would need scale coords by the focal length in meter
-        # here we just want the unit vector defining the ray going passing through the cam origin and the pixel
+        f = 5.5 / 1000  # focal length in meters
+        pixel_coords *= f
+
         normed_dirs = pixel_coords / pixel_coords.norm(dim=2, keepdim=True)
+        normed_dirs = rearrange(normed_dirs, 'b n c k -> b (n k) c')
 
         cam_origins = repeat(trans, 'b n c -> b n c k', k=normed_dirs.shape[-1])
-
-        normed_dirs = rearrange(normed_dirs, 'b n c k -> b (n k) c')
         cam_origins = rearrange(cam_origins, 'b n c k -> b (n k) c')
 
         output = [cam_origins, normed_dirs]

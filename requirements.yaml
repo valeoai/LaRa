@@ -1,5 +1,6 @@
 channels:
-  - pytorch-nvidia
+  - nvidia
+  - pytorch
   - defaults
   - conda-forge
 dependencies:
