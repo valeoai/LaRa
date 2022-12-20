@@ -5,6 +5,7 @@
 
 defaults:
   - override /log_dir: debug.yaml
+  - override /trainer: default.yaml
 
 trainer:
   max_epochs: 1

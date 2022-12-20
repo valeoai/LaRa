@@ -84,7 +84,7 @@ class CamMatrixInputEmbedding(InputEmbedding):
         normed_dirs = pixel_coords / pixel_coords.norm(dim=2, keepdim=True)
         normed_dirs = rearrange(normed_dirs, 'b n c k -> b (n k) c')
 
-        cam_origins = repeat(trans, 'b n c -> b n c k', k=normed_dirs.shape[-1])
+        cam_origins = repeat(trans, 'b n c -> b n c k', k=pixel_coords.shape[-1])
         cam_origins = rearrange(cam_origins, 'b n c k -> b (n k) c')
 
         output = [cam_origins, normed_dirs]

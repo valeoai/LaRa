@@ -70,7 +70,7 @@ python train.py experiment=LaRa_inCamrays_outCoord
 You can override any parameter from the command line like this
 
 ```bash
-python train.py trainer.max_epochs=20 datamodule.batch_size=3 model=LaRaUP experiment=LaRa_inCamplucker_outCoord
+python train.py experiment=LaRa_inCamplucker_outCoord model=LaRaUP trainer.max_epochs=20 datamodule.batch_size=3
 ```
 
 In tensorboard image logs, the ground-truth BEV map will be color-coded following:
